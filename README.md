@@ -28,18 +28,30 @@ What would show I am wrong: a round 1 rate near 0.5 at low spread, a rate that r
 - **Slow path**: no proposer has the leader's reserved top priority, so phase 0 cannot decide. This models round 2 onwards or a dead leader.
 - **Delay spread**: one-way link delays drawn per message from a distribution with a fixed median and a swept ratio between its high and low ends. Zero spread is the degenerate case where the rate is 1 by construction, so it is a sanity check and not a result.
 
-## Modelling choices still open (Tuesday)
+## Modelling choices (Tuesday)
 
-The post describes the phases in prose, not pseudocode, and the paper (Tennage, Băsescu et al., 2023) cannot be read from the cloud sandbox. Every guess goes here and none of them is credited to Cloudflare.
+The post describes the phases in prose, not pseudocode, and the paper (Tennage, Băsescu et al., 2023) cannot be read from the cloud sandbox. Every guess is ours and none of it is credited to Cloudflare. The full list lives in `MODEL_CHOICES` in `sim.py`. The ones that matter most:
 
-- What a recorder returns in phase 2: the highest priority it stored in phase 1, or across phases.
-- Whether proposers start a round at the same instant or with jitter.
-- Priority range. Drawn from a small range, priorities can tie, so the range is an explicit arm and ties are counted.
-- Whether a proposer that decides keeps sending messages that other proposers can see in the same round.
+- A step is `4*round + phase`. A recorder freezes a step when it first sees a later one and rejects late messages for it, and the rejected proposer jumps forward to the recorder's step. Without the freeze, a slow proposer can still push a higher proposal into a phase another proposer already decided on.
+- Phase 0 and 1 replies carry the recorder's highest proposal so far in that step (`reply_mode="max"`, from the post's wording) or the first one (`"first"`, which the paper may use). Both are arms.
+- Phase 2 and 3 replies carry the frozen highest proposal of the previous step. Phase 2 decides when every reply in the majority equals the proposer's own proposal.
+- Each round, a proposer gives its carried value a fresh random priority, so a value several proposers carry gets several draws. This is our reading of "convergence".
+- Priorities come from `range(prio_range)`, ties break on proposer id and are counted.
+- Links are FIFO per pair by default (`fifo=True`), as over one TCP connection.
+- A proposer that decides keeps running phases with its value at a reserved top priority (`decided_continue=True`).
+- Proposers start with jitter uniform in `[0, 0.5 * median)`. Delay per message is `median * spread**(u - 0.5)`.
+
+## Notes from building it (Tuesday)
+
+These came out of smoke runs while writing the simulator. They are about the model, not the result, and they go into "What was wrong first" on Saturday.
+
+- With non-FIFO links a lone proposer failed round 1 in some trials at spread 16, which cannot be right for one proposer. A recorder that got the step 2 message before the step 1 message had no step 1 summary to report. FIFO links fixed it: 1 proposer decides in round 1 in every trial at every spread tried.
+- When a proposer stopped as soon as it decided, other proposers sometimes decided a different value in a later round (for example 7 of 400 trials at 3 proposers, spread 16). Same-round agreement never broke. Keeping decided proposers running at a reserved top priority gave 0 disagreements in 2000 trials each at 2, 3 and 5 proposers, spread 16, FIFO. With non-FIFO links there was still 1 in 2000 at 3 and at 5 proposers, so carry-forward in this model is not proven safe, only not caught failing.
+- Round 1 rate, the week's metric, does not depend on the `decided_continue` choice, since it only looks at the first decision.
 
 ## Planned layout
 
-- `sim.py`: zero-dependency, seeded discrete-event simulator of the four phases
+- `sim.py`: zero-dependency, seeded discrete-event simulator of the four phases (built Tuesday). `python3 sim.py 500` prints a smoke table, not a result.
 - `test_sim.py`: harness tests, including the zero-spread and single-proposer cases that must decide every round
 - `results/`: raw sweep output, written Thursday
 
