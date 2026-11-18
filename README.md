@@ -2,7 +2,7 @@
 
 **Inspired by [Choosing QuePaxa, an unusual consensus algorithm](https://blog.cloudflare.com/choosing-quepaxa/)**, João Pedro Leite, Bob Halley and James Larisch, Cloudflare, 11 Nov 2026.
 
-Status: Monday scaffold. The hypothesis below was written before any code, and it stays here unedited whatever the week finds.
+Status: Wednesday, harness tests and sweep written, full sweep not run yet. The hypothesis below was written before any code, and it stays here unedited whatever the week finds.
 
 ## The question
 
@@ -49,10 +49,28 @@ These came out of smoke runs while writing the simulator. They are about the mod
 - When a proposer stopped as soon as it decided, other proposers sometimes decided a different value in a later round (for example 7 of 400 trials at 3 proposers, spread 16). Same-round agreement never broke. Keeping decided proposers running at a reserved top priority gave 0 disagreements in 2000 trials each at 2, 3 and 5 proposers, spread 16, FIFO. With non-FIFO links there was still 1 in 2000 at 3 and at 5 proposers, so carry-forward in this model is not proven safe, only not caught failing.
 - Round 1 rate, the week's metric, does not depend on the `decided_continue` choice, since it only looks at the first decision.
 
-## Planned layout
+## Harness (Wednesday)
 
-- `sim.py`: zero-dependency, seeded discrete-event simulator of the four phases (built Tuesday). `python3 sim.py 500` prints a smoke table, not a result.
-- `test_sim.py`: harness tests, including the zero-spread and single-proposer cases that must decide every round
+- `test_sim.py`, 24 tests, `python3 -m unittest -v test_sim`, under 3 seconds. They cover delay bounds, the recorder freeze and reply modes, the conditional rate arithmetic, the Wilson interval, determinism per seed, distinct seeds giving distinct runs, 1 proposer and spread 1 always deciding in round 1, agreement over 900 trials at spread 16, eventual decision at spread 64, the tie counter, and that round 1 can fail at spread 16 so the metric is not fixed by construction.
+- To check the tests bite, five bugs were planted in `sim.py` one at a time: no step freeze, a quorum of 1, a skewed delay draw, no tie counting, and stopping decided proposers. Each one failed at least one test.
+- `sweep.py` emits the number. Each row runs 4 seed blocks with disjoint seeds and reports the round 1 rate with a Wilson 95% interval and the lowest and highest block, the round 2 rate given round 1 failed, the pooled rate (decisions over rounds run), agreement violations, undecided trials and priority ties. `python3 sweep.py` runs a 4 row check grid. `python3 sweep.py --full --out results/sweep.csv` runs 96 rows: reply mode (max, first) by recorders (3, 5) by proposers (1, 2, 3, 5) by spread (1, 2, 4, 8, 16, 64). That run is Thursday's.
+
+First output of the check grid, 400 trials per row, 5 recorders, `reply_mode="max"`. Not the result, since Thursday runs the full grid:
+
+| proposers | spread | round 1 rate (95% CI) | round 2 rate given round 1 failed |
+|---|---|---|---|
+| 2 | 1 | 1.000 (0.991 to 1.000) | none reached |
+| 2 | 16 | 0.915 (0.884 to 0.939) | 0.794 (34 trials) |
+| 3 | 1 | 1.000 (0.991 to 1.000) | none reached |
+| 3 | 16 | 0.915 (0.884 to 0.939) | 0.676 (34 trials) |
+
+Round 2 decided less often than round 1 here, against hypothesis 3. With 34 trials that is weak, and it may be selection, since the trials that fail round 1 are the ones whose delays put proposers out of step. Friday should check it.
+
+## Layout
+
+- `sim.py`: zero-dependency, seeded discrete-event simulator of the four phases. `python3 sim.py 500` prints a smoke table, not a result.
+- `test_sim.py`: harness tests
+- `sweep.py`: the sweep that emits the number
 - `results/`: raw sweep output, written Thursday
 
 ## Finding, Method, Repro, What was wrong first, Limits
