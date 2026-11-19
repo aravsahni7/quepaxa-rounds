@@ -2,7 +2,7 @@
 
 **Inspired by [Choosing QuePaxa, an unusual consensus algorithm](https://blog.cloudflare.com/choosing-quepaxa/)**, João Pedro Leite, Bob Halley and James Larisch, Cloudflare, 11 Nov 2026.
 
-Status: Wednesday, harness tests and sweep written, full sweep not run yet. The hypothesis below was written before any code, and it stays here unedited whatever the week finds.
+Status: Thursday, full sweep run, raw output in `results/`. Nothing below is a finding until Friday has tried to break it. The hypothesis below was written before any code, and it stays here unedited whatever the week finds.
 
 ## The question
 
@@ -66,12 +66,23 @@ First output of the check grid, 400 trials per row, 5 recorders, `reply_mode="ma
 
 Round 2 decided less often than round 1 here, against hypothesis 3. With 34 trials that is weak, and it may be selection, since the trials that fail round 1 are the ones whose delays put proposers out of step. Friday should check it.
 
+## Raw sweep (Thursday)
+
+96 rows, 2000 trials each, from `results/sweep.csv`. These are what the sweep printed, not yet results.
+
+- Round 1 rate ranges from 0.7665 (5 recorders, 5 proposers, spread 64, `reply_mode="first"`) to 1.000. Every row at spread 1 and 2 is 1.000 or 0.9995, and every 1 proposer row is 1.000. No row is near 0.5, so hypothesis 2 (0.5 or below for 3 or more proposers somewhere in range) did not show up in this grid.
+- `reply_mode="first"` gives lower round 1 rates than `"max"` once there are 3 or more proposers, for example 0.7890 against 0.9005 at 3 recorders, 5 proposers, spread 16.
+- Round 2 given round 1 failed was below round 1 in 48 of the 49 rows where round 2 was reached. The one exception had 1 trial behind it. This is against hypothesis 3, but selection is still the obvious rival explanation.
+- **Agreement broke.** 129 of 192000 trials had two proposers decide different values, in 26 of 96 rows, 39 under `"max"` and 90 under `"first"`, all with FIFO links and decided proposers continuing. The worst row is 17 of 2000 (3 recorders, 5 proposers, spread 64, `"first"`). Wednesday's tests only checked 900 trials at spread 16. A model that violates safety may also be wrong about how often rounds decide, so this has to be explained before any rate is reported.
+- The 2 proposer rows are identical between `"max"` and `"first"` in every column. That may be correct for two proposers or may mean the reply mode is not reaching the code path that matters. Friday checks which.
+- Priority ties: 0 in every row, so no tiebreak decided anything at `prio_range=2**32`. Undecided trials: 0 in every row.
+
 ## Layout
 
 - `sim.py`: zero-dependency, seeded discrete-event simulator of the four phases. `python3 sim.py 500` prints a smoke table, not a result.
 - `test_sim.py`: harness tests
 - `sweep.py`: the sweep that emits the number
-- `results/`: raw sweep output, written Thursday
+- `results/`: raw sweep output (`sweep.csv`) and how it was produced (`RUN.md`)
 
 ## Finding, Method, Repro, What was wrong first, Limits
 
