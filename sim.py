@@ -20,12 +20,19 @@ MODEL_CHOICES = [
     "A recorder freezes a step as soon as it sees a message for a later step. "
     "Messages for a frozen step are rejected and the reply tells the proposer "
     "the recorder's current step, so a proposer never waits forever.",
-    "A proposer that gets a rejection jumps to the recorder's step, adopts "
-    "the recorder's best proposal if it beats its own, and broadcasts again.",
+    "A proposer that gets a rejection jumps to the recorder's step, takes the "
+    "recorder's best proposal for that step as its own, and broadcasts again "
+    "(jump_adopt='recorder'). The Tuesday model kept its own proposal when it "
+    "beat the recorder's (jump_adopt='best'), which lets a value that never "
+    "went through phase 1 into a later step and broke agreement.",
     "Phase 0 and phase 1 replies carry the recorder's highest proposal so far "
     "in the current step ('max'), or the first one it accepted in that step "
     "('first'). Which one is an arm, since the post says 'highest' and the "
     "paper may use first.",
+    "Proposers adopt the best reply in phase 0 only. Phase 1 only spreads, as "
+    "the post describes it (phase1_adopt=False). The Tuesday model also "
+    "adopted in phase 1 (phase1_adopt=True), which can carry a value into "
+    "phase 2 that a majority never recorded in phase 1.",
     "Phase 2 and phase 3 replies carry the frozen highest proposal of the "
     "previous step. Phase 2 decides when every reply in the majority equals "
     "the proposer's own adopted proposal.",
@@ -97,7 +104,8 @@ class Proposer:
 
 def run_trial(seed, n_prop=3, n_rec=5, spread=4.0, median=1.0,
               start_jitter=0.5, prio_range=2 ** 32, reply_mode="max",
-              max_rounds=50, fifo=True, decided_continue=True):
+              max_rounds=50, fifo=True, decided_continue=True,
+              phase1_adopt=False, jump_adopt="recorder"):
     """Runs one instance until every proposer decides or max_rounds pass.
 
     Returns a dict with the round each proposer decided in, the values they
@@ -171,7 +179,10 @@ def run_trial(seed, n_prop=3, n_rec=5, spread=4.0, median=1.0,
                 continue
             if not ok:
                 if rstep > p.step:
-                    p.prop = best(p.prop, view)
+                    if jump_adopt == "best":
+                        p.prop = best(p.prop, view)
+                    else:
+                        p.prop = view
                     enter(p, rstep, now)
                 continue
             p.replies[r] = (view, prev)
@@ -180,8 +191,9 @@ def run_trial(seed, n_prop=3, n_rec=5, spread=4.0, median=1.0,
             phase = p.step % PHASES
             got = list(p.replies.values())
             if phase == 0 or phase == 1:
-                for v, _ in got:
-                    p.prop = best(p.prop, v)
+                if phase == 0 or phase1_adopt:
+                    for v, _ in got:
+                        p.prop = best(p.prop, v)
             elif p.decided is not None:
                 pass
             elif phase == 2:

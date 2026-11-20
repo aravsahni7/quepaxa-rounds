@@ -140,6 +140,36 @@ class TrialTests(unittest.TestCase):
                 x = run_trial(seed, n_prop=n_prop, spread=16.0)
                 self.assertTrue(x["agree"], (n_prop, seed))
 
+    def test_agreement_holds_on_thursday_worst_row(self):
+        # Thursday's sweep broke agreement 17 times in this row. Same seeds.
+        for seed in [b * 1_000_000 + i for b in range(4) for i in range(500)]:
+            x = run_trial(seed, n_prop=5, n_rec=3, spread=64.0,
+                          reply_mode="first")
+            self.assertTrue(x["agree"], seed)
+
+    def test_tuesday_rules_break_agreement(self):
+        # Each old rule on its own breaks agreement on a known seed, so the
+        # test above would catch either one coming back.
+        cfg = dict(n_prop=5, n_rec=3, spread=64.0, reply_mode="first")
+        self.assertFalse(run_trial(357, jump_adopt="best", **cfg)["agree"])
+        self.assertFalse(run_trial(3000446, phase1_adopt=True,
+                                   **cfg)["agree"])
+        self.assertFalse(run_trial(357, phase1_adopt=True, jump_adopt="best",
+                                   **cfg)["agree"])
+
+    def test_two_proposers_reply_mode_cannot_matter(self):
+        # A reply is built when the proposer's own message lands, so with two
+        # proposers the other proposal is either already there, which makes
+        # it both first and the max over our own, or absent. Same trial.
+        for seed in range(300):
+            a = run_trial(seed, n_prop=2, spread=16.0, reply_mode="max")
+            b = run_trial(seed, n_prop=2, spread=16.0, reply_mode="first")
+            self.assertEqual(a, b, seed)
+        diff = sum(run_trial(s, n_prop=3, spread=16.0, reply_mode="max")
+                   != run_trial(s, n_prop=3, spread=16.0, reply_mode="first")
+                   for s in range(300))
+        self.assertGreater(diff, 0)
+
     def test_decided_value_was_proposed(self):
         # Values are proposer ids, so a decided value must be one of them.
         for seed in range(200):

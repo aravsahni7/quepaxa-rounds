@@ -29,7 +29,8 @@ from sim import per_round_rates, run_trial
 
 FIELDS = ["n_prop", "n_rec", "spread", "reply_mode", "prio_range", "fifo",
           "trials", "r1", "r1_lo", "r1_hi", "r1_bmin", "r1_bmax", "r2",
-          "r2_n", "pooled", "viol", "undec", "ties"]
+          "r2_n", "pooled", "viol", "undec", "ties", "phase1_adopt",
+          "jump_adopt"]
 
 
 def wilson(hits, n, z=1.96):
@@ -43,13 +44,15 @@ def wilson(hits, n, z=1.96):
 
 
 def run_row(n_prop, n_rec, spread, reply_mode="max", prio_range=2 ** 32,
-            fifo=True, trials=500, blocks=4, base_seed=0):
+            fifo=True, trials=500, blocks=4, base_seed=0,
+            phase1_adopt=False, jump_adopt="recorder"):
     res = []
     block_r1 = []
     for b in range(blocks):
         block = [run_trial(base_seed + b * 1_000_000 + i, n_prop=n_prop,
                            n_rec=n_rec, spread=spread, reply_mode=reply_mode,
-                           prio_range=prio_range, fifo=fifo)
+                           prio_range=prio_range, fifo=fifo,
+                           phase1_adopt=phase1_adopt, jump_adopt=jump_adopt)
                  for i in range(trials)]
         block_r1.append(sum(1 for x in block if x["first_round"] == 1)
                         / trials)
@@ -73,6 +76,7 @@ def run_row(n_prop, n_rec, spread, reply_mode="max", prio_range=2 ** 32,
         "viol": sum(1 for x in res if not x["agree"]),
         "undec": n - len(decided),
         "ties": sum(x["ties"] for x in res),
+        "phase1_adopt": phase1_adopt, "jump_adopt": jump_adopt,
     }
 
 
