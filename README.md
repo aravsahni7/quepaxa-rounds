@@ -2,7 +2,7 @@
 
 **Inspired by [Choosing QuePaxa, an unusual consensus algorithm](https://blog.cloudflare.com/choosing-quepaxa/)**, João Pedro Leite, Bob Halley and James Larisch, Cloudflare, 11 Nov 2026.
 
-Status: Thursday, full sweep run, raw output in `results/`. Nothing below is a finding until Friday has tried to break it. The hypothesis below was written before any code, and it stays here unedited whatever the week finds.
+Status: Friday done. Two model bugs found and fixed, the sweep rerun, and two rival explanations checked. Saturday rewrites this README around what survived. The hypothesis below was written before any code, and it stays here unedited whatever the week finds.
 
 ## The question
 
@@ -77,13 +77,38 @@ Round 2 decided less often than round 1 here, against hypothesis 3. With 34 tria
 - The 2 proposer rows are identical between `"max"` and `"first"` in every column. That may be correct for two proposers or may mean the reply mode is not reaching the code path that matters. Friday checks which.
 - Priority ties: 0 in every row, so no tiebreak decided anything at `prio_range=2**32`. Undecided trials: 0 in every row.
 
+## Friday: what broke and what survived
+
+### What was wrong first
+
+- **The model broke agreement.** Thursday's sweep had two proposers decide different values in 129 of 192000 trials. Tracing seed 2000057 (5 proposers, 3 recorders, spread 64, `first` replies) showed how: proposers 0 and 2 decided value 1 in round 1, while proposer 3 picked up value 4 at a higher priority from one recorder's reply during phase 1, carried it into phase 2, and phase 3 then carried value 4 into round 2 over the decided value. The post says phase 1 only spreads, so adopting there was our bug, not the protocol's.
+- **A second rule broke it too.** A proposer that got rejected jumped to the recorder's step but kept its own proposal when that beat the recorder's. That lets a value skip phase 1 and land in phase 2 or a later round. On the worst Thursday row (2000 trials) the jump rule alone broke agreement 28 times and phase 1 adoption alone once. With both fixed, 0. Both old rules stay as arms (`jump_adopt="best"`, `phase1_adopt=True`) and a test pins a breaking seed for each.
+- **My own check had a bug as well.** The first version of the Friday patch let phase 1 fall through to the phase 3 branch, which made it look like the fixes did not work (4 violations left). Caught by tracing a violating seed before believing it.
+- **Wednesday's agreement test was too small to see it.** It ran 900 trials at spread 16, where the rate was about 1 in 2000. It now also runs the 2000 seeds of Thursday's worst row.
+- **Round 2 below round 1 was mostly our start jitter.** Thursday had round 2 below round 1 in 48 of 49 rows. Delays are drawn fresh per message, so there is no lasting bad network per trial to select on. What differs is alignment: round 1 starts proposers within 0.5 median of each other, which is our choice, while round 2 starts wherever round 1 left them. Sweeping start jitter (`results/fri_jitter.csv`, 72 rows x 1000 trials) moves round 1 from about 0.99 at jitter 0 down to 0.77 to 0.89 at jitter 2, and at jitter 2 the mean gap between round 1 and round 2 is 0.000 (round 2 higher in 6 of 12 rows). At the other jitters round 2 is still lower, by 0.05 to 0.10 on average. On the fixed model at jitter 0.5, round 2 is below round 1 in 33 of 49 rows.
+- **The 2 proposer rows being identical between `max` and `first` is correct.** A reply is built when the proposer's own message arrives, so with two proposers the other proposal is either already there, which makes it both the first and the max over our own, or not there at all. A test now checks this and checks that 3 proposers do differ.
+
+### What survived
+
+- On the fixed model, round 1 decides in 0.7765 (Wilson 95% 0.758 to 0.794) to 1.000 of trials across the 96 row grid, 0 agreement violations in 192000 trials (`results/sweep_fri.csv`). Rates moved at most 0.026 from Thursday's broken model.
+- The rate is not pinned above 0.5 by construction. With 20 proposers and `first` replies it reaches 0.5825 (0.534 to 0.630) at spread 16 (`results/fri_many_proposers.csv`).
+- **The reply rule decides which of the post's two sentences wins.** With `max` replies, round 1 rises slightly with proposer count at spread 16 (0.93, 0.93, 0.95 at 8, 12, 20 proposers), which is "the more likely they are to converge". With `first` replies it falls (0.73, 0.64, 0.58), which is "the more likely it is that replicas fail to decide". We cannot read the paper from here, so we do not know which rule QuePaxa uses. That is the honest headline so far.
+- Hypothesis 3 (round 2 decides more often than round 1, from convergence) did not show up at any start jitter tried. Hypothesis 2 (0.5 or below for 3 or more proposers) did not show up in the 1 to 5 proposer grid and only came close at 20 proposers with `first` replies.
+
+### Still weak
+
+- The protocol is our reading of a blog post. Two of our rules were already unsafe, so others may be wrong in ways that do not break agreement but do move the rate.
+- Round 1 rate depends on start jitter, which the post says nothing about, by up to 0.135 within one configuration (5 proposers, spread 4, `first` replies: 0.955 at jitter 0, 0.820 at jitter 2).
+- No leader and no hedge timeout are modelled, so this is the slow path only, as stated at the top.
+
 ## Layout
 
 - `sim.py`: zero-dependency, seeded discrete-event simulator of the four phases. `python3 sim.py 500` prints a smoke table, not a result.
 - `test_sim.py`: harness tests
 - `sweep.py`: the sweep that emits the number
-- `results/`: raw sweep output (`sweep.csv`) and how it was produced (`RUN.md`)
+- `checks/`: Friday's jitter and many-proposer checks, each prints CSV
+- `results/`: raw output. `sweep.csv` is Thursday's run on the broken model, `sweep_fri.csv` the same grid on the fixed one, `fri_*.csv` the checks. `RUN.md` and `RUN_fri.md` say how each was produced.
 
-## Finding, Method, Repro, What was wrong first, Limits
+## Finding, Method, Repro, Limits
 
-Not yet. These get written after Friday tries to break the result.
+Saturday's job, written around "What survived" above.
